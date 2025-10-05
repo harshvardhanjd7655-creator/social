@@ -112,6 +112,10 @@ public class ChatFragment extends Fragment implements Constants {
     public static final int RESULT_OK = -1;
 
     private ProgressDialog pDialog;
+
+    private android.os.Handler autoRefreshHandler = new android.os.Handler();
+    private Runnable autoRefreshRunnable;
+    private static final int AUTO_REFRESH_INTERVAL_MS = 5000; // 5 seconds
     Menu MainMenu;
     View mListViewHeader;
     RelativeLayout mLoadingScreen, mErrorScreen;
@@ -155,6 +159,27 @@ public class ChatFragment extends Fragment implements Constants {
 
     public ChatFragment() {
         // Required empty public constructor
+    }
+
+
+    private void startAutoRefresh() {
+        // Runnable that calls getChat() every 5 seconds
+        autoRefreshRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (App.getInstance().isConnected()) {
+                    getChat(); // Your method to refresh the chat list
+                }
+                autoRefreshHandler.postDelayed(this, AUTO_REFRESH_INTERVAL_MS);
+            }
+        };
+        autoRefreshHandler.postDelayed(autoRefreshRunnable, AUTO_REFRESH_INTERVAL_MS);
+    }
+
+    private void stopAutoRefresh() {
+        if (autoRefreshHandler != null && autoRefreshRunnable != null) {
+            autoRefreshHandler.removeCallbacks(autoRefreshRunnable);
+        }
     }
 
     @Override
@@ -530,6 +555,7 @@ public class ChatFragment extends Fragment implements Constants {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        stopAutoRefresh(); // <--- Add this line!
         getActivity().unregisterReceiver(br);
         getActivity().unregisterReceiver(br_seen);
         getActivity().unregisterReceiver(br_typing_start);
@@ -541,12 +567,15 @@ public class ChatFragment extends Fragment implements Constants {
     public void onResume() {
         super.onResume();
         visible = true;
+        startAutoRefresh(); // <-- Add this line
     }
+
 
     @Override
     public void onPause() {
         super.onPause();
         visible = false;
+        stopAutoRefresh(); // <-- Add this line
     }
 
     protected void initpDialog() {
