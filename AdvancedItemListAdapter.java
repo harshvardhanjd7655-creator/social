@@ -3463,7 +3463,7 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
             public void onClick(@NonNull View widget) {
                 expandedPosts.add(p.getId());
                 try {
-                    notifyItemChanged(position);
+                    notifyItemChanged(position, "expand_post");
                 } catch (Exception e) {
                     // Fallback: set full text directly if notifyItemChanged fails for any reason
                     CharSequence processed;
