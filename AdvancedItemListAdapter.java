@@ -1837,17 +1837,140 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                 holder.mItemDescription.setMovementMethod(LinkMovementMethod.getInstance());
 
                 String textHtml = p.getPost();
-                setPostTextWithReadMore(holder.mItemDescription, textHtml, p, position);
+                private void setPostTextWithReadMore(final EmojiconTextView tv, final String textHtml, final Item p, final int position) {
 
-                holder.mItemDescription.setOnLongClickListener(new View.OnLongClickListener() {
-                    @Override
-                    public boolean onLongClick(View v) {
-                        ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                        ClipData clip = ClipData.newPlainText("msg", p.getPost().replaceAll("<br>", "\n"));
-                        clipboard.setPrimaryClip(clip);
-                        Toast.makeText(context, context.getString(R.string.msg_copied_to_clipboard), Toast.LENGTH_SHORT).show();
-                        return false;
+                    final String plainText;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        plainText = Html.fromHtml(textHtml, Html.FROM_HTML_MODE_LEGACY).toString();
+                    } else {
+                        plainText = Html.fromHtml(textHtml).toString();
                     }
+
+                    final String readMoreLabel = context.getString(R.string.label_read_more);
+                    final String readLessLabel = context.getString(R.string.label_read_less); // add this string if not present
+
+                    // Helper: produce processed (clickable hashtags/mentions) for given raw text
+                    final java.util.function.Function<String, CharSequence> processText = (raw) -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            return mTagSelectingTextview.addClickablePart(Html.fromHtml(raw, Html.FROM_HTML_MODE_LEGACY).toString(), this, hashTagHyperLinkDisabled, HASHTAGS_COLOR);
+                        } else {
+                            return mTagSelectingTextview.addClickablePart(Html.fromHtml(raw).toString(), this, hashTagHyperLinkDisabled, HASHTAGS_COLOR);
+                        }
+                    };
+
+                    // Helper: build truncated spannable with "Read more" clickable
+                    final java.util.function.Supplier<CharSequence> buildTruncated = () -> {
+                        int cut = POST_TRUNCATE_CHARS;
+                        String truncated = plainText.length() > cut ? plainText.substring(0, cut).trim() : plainText;
+                        int lastSpace = truncated.lastIndexOf(' ');
+                        if (lastSpace > 0 && truncated.length() > cut - 5) truncated = truncated.substring(0, lastSpace);
+
+                        CharSequence processedTruncated = mTagSelectingTextview.addClickablePart(truncated, this, hashTagHyperLinkDisabled, HASHTAGS_COLOR);
+
+                        SpannableStringBuilder sb = new SpannableStringBuilder();
+                        sb.append(processedTruncated);
+                        if (plainText.length() > truncated.length()) {
+                            sb.append("... ");
+                            int start = sb.length();
+                            sb.append(readMoreLabel);
+                            int end = sb.length();
+
+                            ClickableSpan csReadMore = new ClickableSpan() {
+                                @Override
+                                public void onClick(@NonNull View widget) {
+                                    // Expand: mark and set full text with "Read less" appended
+                                    expandedPosts.add(p.getId());
+                                    CharSequence full = processText.apply(textHtml);
+
+                                    SpannableStringBuilder fullSb = new SpannableStringBuilder();
+                                    fullSb.append(full);
+                                    fullSb.append(" ");
+                                    int s = fullSb.length();
+                                    fullSb.append(readLessLabel);
+                                    int e = fullSb.length();
+                                    ClickableSpan csReadLess = new ClickableSpan() {
+                                        @Override
+                                        public void onClick(@NonNull View widget) {
+                                            // Collapse: remove and set truncated in-place
+                                            expandedPosts.remove(p.getId());
+                                            tv.setText(buildTruncated.get(), TextView.BufferType.SPANNABLE);
+                                            tv.setMovementMethod(LinkMovementMethod.getInstance());
+                                            try { resumeAutoplayIfVisible(); } catch (Throwable ignored) {}
+                                        }
+
+                                        @Override
+                                        public void updateDrawState(@NonNull TextPaint ds) {
+                                            super.updateDrawState(ds);
+                                            ds.setColor(Color.parseColor(HASHTAGS_COLOR));
+                                            ds.setUnderlineText(false);
+                                        }
+                                    };
+                                    fullSb.setSpan(csReadLess, s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                                    tv.setText(fullSb, TextView.BufferType.SPANNABLE);
+                                    tv.setMovementMethod(LinkMovementMethod.getInstance());
+                                    try { resumeAutoplayIfVisible(); } catch (Throwable ignored) {}
+                                }
+
+                                @Override
+                                public void updateDrawState(@NonNull TextPaint ds) {
+                                    super.updateDrawState(ds);
+                                    ds.setColor(Color.parseColor(HASHTAGS_COLOR));
+                                    ds.setUnderlineText(false);
+                                }
+                            };
+                            sb.setSpan(csReadMore, start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        }
+                        return sb;
+                    };
+
+                    // If already expanded -> show full text + "Read less"
+                    if (expandedPosts.contains(p.getId())) {
+                        CharSequence full = processText.apply(textHtml);
+
+                        SpannableStringBuilder fullSb = new SpannableStringBuilder();
+                        fullSb.append(full);
+
+                        // append Read less
+                        fullSb.append(" ");
+                        int s = fullSb.length();
+                        fullSb.append(readLessLabel);
+                        int e = fullSb.length();
+
+                        ClickableSpan csReadLess = new ClickableSpan() {
+                            @Override
+                            public void onClick(@NonNull View widget) {
+                                expandedPosts.remove(p.getId());
+                                tv.setText(buildTruncated.get(), TextView.BufferType.SPANNABLE);
+                                tv.setMovementMethod(LinkMovementMethod.getInstance());
+                                try { resumeAutoplayIfVisible(); } catch (Throwable ignored) {}
+                            }
+
+                            @Override
+                            public void updateDrawState(@NonNull TextPaint ds) {
+                                super.updateDrawState(ds);
+                                ds.setColor(Color.parseColor(HASHTAGS_COLOR));
+                                ds.setUnderlineText(false);
+                            }
+                        };
+                        fullSb.setSpan(csReadLess, s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                        tv.setText(fullSb, TextView.BufferType.SPANNABLE);
+                        tv.setMovementMethod(LinkMovementMethod.getInstance());
+                        return;
+                    }
+
+                    // Short text -> show full processed text (no read more)
+                    if (plainText.length() <= POST_TRUNCATE_CHARS) {
+                        CharSequence processed = processText.apply(textHtml);
+                        tv.setText(processed, TextView.BufferType.SPANNABLE);
+                        tv.setMovementMethod(LinkMovementMethod.getInstance());
+                        return;
+                    }
+
+                    // Otherwise: show truncated with "Read more"
+                    tv.setText(buildTruncated.get(), TextView.BufferType.SPANNABLE);
+                    tv.setMovementMethod(LinkMovementMethod.getInstance());
                 });
 
             } else {
@@ -3463,7 +3586,7 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
             public void onClick(@NonNull View widget) {
                 expandedPosts.add(p.getId());
                 try {
-                    notifyItemChanged(position, "expand_post");
+                    notifyItemChanged(position);
                 } catch (Exception e) {
                     // Fallback: set full text directly if notifyItemChanged fails for any reason
                     CharSequence processed;
